@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -15,7 +13,6 @@ import (
 	"github.com/stephenwithav/sqlc/pkg/opts"
 	"github.com/stephenwithav/sqlc/pkg/sql/ast"
 	"github.com/stephenwithav/sqlc/pkg/sql/sqlerr"
-	"github.com/stephenwithav/sqlc/pkg/sql/sqlpath"
 )
 
 // TODO: Rename this interface Engine
@@ -54,26 +51,18 @@ func enumValueName(value string) string {
 
 // end copypasta
 func (c *Compiler) parseCatalog(schemas []string) error {
-	files, err := sqlpath.Glob(schemas)
-	if err != nil {
-		return err
-	}
+	// schemas[0] contains the schemas
 	merr := multierr.New()
-	for _, filename := range files {
-		blob, err := os.ReadFile(filename)
-		if err != nil {
-			merr.Add(filename, "", 0, err)
-			continue
-		}
-		contents := migrations.RemoveRollbackStatements(string(blob))
+	for _, schema := range schemas {
+		contents := migrations.RemoveRollbackStatements(schema)
 		stmts, err := c.parser.Parse(strings.NewReader(contents))
 		if err != nil {
-			merr.Add(filename, contents, 0, err)
+			merr.Add(schema, contents, 0, err)
 			continue
 		}
 		for i := range stmts {
 			if err := c.catalog.Update(stmts[i], c); err != nil {
-				merr.Add(filename, contents, stmts[i].Pos(), err)
+				merr.Add(schema, contents, stmts[i].Pos(), err)
 				continue
 			}
 		}
@@ -88,20 +77,11 @@ func (c *Compiler) parseQueries(o opts.Parser) (*Result, error) {
 	var q []*Query
 	merr := multierr.New()
 	set := map[string]struct{}{}
-	files, err := sqlpath.Glob(c.conf.Queries)
-	if err != nil {
-		return nil, err
-	}
-	for _, filename := range files {
-		blob, err := os.ReadFile(filename)
-		if err != nil {
-			merr.Add(filename, "", 0, err)
-			continue
-		}
-		src := string(blob)
+	for _, queryFromYaml := range c.conf.Queries {
+		src := string(queryFromYaml)
 		stmts, err := c.parser.Parse(strings.NewReader(src))
 		if err != nil {
-			merr.Add(filename, src, 0, err)
+			merr.Add(queryFromYaml, src, 0, err)
 			continue
 		}
 		for _, stmt := range stmts {
@@ -115,17 +95,17 @@ func (c *Compiler) parseQueries(o opts.Parser) (*Result, error) {
 				if errors.As(err, &e) && e.Location != 0 {
 					loc = e.Location
 				}
-				merr.Add(filename, src, loc, err)
+				merr.Add(queryFromYaml, src, loc, err)
 				continue
 			}
 			if query.Name != "" {
 				if _, exists := set[query.Name]; exists {
-					merr.Add(filename, src, stmt.Raw.Pos(), fmt.Errorf("duplicate query name: %s", query.Name))
+					merr.Add(queryFromYaml, src, stmt.Raw.Pos(), fmt.Errorf("duplicate query name: %s", query.Name))
 					continue
 				}
 				set[query.Name] = struct{}{}
 			}
-			query.Filename = filepath.Base(filename)
+			query.Filename = "queries"
 			if query != nil {
 				q = append(q, query)
 			}
