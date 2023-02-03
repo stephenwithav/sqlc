@@ -69,8 +69,8 @@ sql:
       )
     gen:
       go:
-        package: "mygenerator"
-        out: "mygenerator"
+        package: "db/mygenerator"
+        out: "db/mygenerator"
 `
 
 	r := strings.NewReader(given)

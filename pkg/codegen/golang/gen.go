@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go/format"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -93,7 +94,7 @@ func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, querie
 		UsesBatch:                 usesBatch(queries),
 		SQLDriver:                 parseDriver(golang.SqlPackage),
 		Q:                         "`",
-		Package:                   golang.Package,
+		Package:                   filepath.Base(golang.Package),
 		GoQueries:                 queries,
 		Enums:                     enums,
 		Structs:                   structs,
