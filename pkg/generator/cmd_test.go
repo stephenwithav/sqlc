@@ -43,22 +43,22 @@ sql:
         out: "generator"
   - engine: "mysql"
     queries: |
-      -- name: GetAuthor :one
+      -- name: GetAuthor2 :one
          SELECT * FROM authors
          WHERE id = $1 LIMIT 1;
 
-      -- name: ListAuthors :many
+      -- name: ListAuthors2 :many
          SELECT * FROM authors
          ORDER BY name;
 
-      -- name: CreateAuthor :execresult
+      -- name: CreateAuthor2 :execresult
          INSERT INTO authors (
            name, bio
          ) VALUES (
            $1, $2
          );
 
-      -- name: DeleteAuthor :exec
+      -- name: DeleteAuthor2 :exec
          DELETE FROM authors
          WHERE id = $1;
     schema: |
@@ -74,12 +74,12 @@ sql:
 `
 
 	r := strings.NewReader(given)
-	sqlmap, err := SQLToGo(r)
+	_, _, err := SQLToGo(r)
 	if err != nil {
 		log.Println(err)
 	}
 
-	for file, _ := range sqlmap {
-		log.Println(file)
-	}
+	// for file, _ := range sqlmap {
+	// 	log.Println(file)
+	// }
 }
