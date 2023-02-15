@@ -7,13 +7,6 @@ import (
 	"github.com/stephenwithav/sqlc/pkg/plugin"
 )
 
-// TODO: Change SQLToGo's input to SQLCParams, where each file field corresponds
-// to an io.Reader.
-//
-// TODO: Change Generate to accept SQLCParams, read file contents from there.
-type SQLCParams struct {
-}
-
 // SQLToGo transforms a sqlc.yaml-formatted io.Reader into the appropriate Go
 // code.
 //

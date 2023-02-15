@@ -15,14 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/stephenwithav/sqlc/pkg/codegen/golang"
-	"github.com/stephenwithav/sqlc/pkg/codegen/json"
 	"github.com/stephenwithav/sqlc/pkg/compiler"
 	"github.com/stephenwithav/sqlc/pkg/config"
-	"github.com/stephenwithav/sqlc/pkg/config/convert"
 	"github.com/stephenwithav/sqlc/pkg/debug"
 	"github.com/stephenwithav/sqlc/pkg/ext"
-	"github.com/stephenwithav/sqlc/pkg/ext/process"
-	"github.com/stephenwithav/sqlc/pkg/ext/wasm"
 	"github.com/stephenwithav/sqlc/pkg/multierr"
 	"github.com/stephenwithav/sqlc/pkg/opts"
 	"github.com/stephenwithav/sqlc/pkg/plugin"
@@ -236,45 +232,8 @@ func codegen(ctx context.Context, combo config.CombinedSettings, sql outPair, re
 	fmt.Printf("Queriez: %+v\n", req.GetQueries()[0].GetColumns())
 	var handler ext.Handler
 	var out string
-	switch {
-	case sql.Gen.Go != nil:
-		out = combo.Go.Out
-		handler = ext.HandleFunc(golang.Generate)
-
-	case sql.Gen.JSON != nil:
-		out = combo.JSON.Out
-		handler = ext.HandleFunc(json.Generate)
-
-	case sql.Plugin != nil:
-		out = sql.Plugin.Out
-		plug, err := findPlugin(combo.Global, sql.Plugin.Plugin)
-		if err != nil {
-			return "", nil, req, fmt.Errorf("plugin not found: %s", err)
-		}
-
-		switch {
-		case plug.Process != nil:
-			handler = &process.Runner{
-				Cmd: plug.Process.Cmd,
-			}
-		case plug.WASM != nil:
-			handler = &wasm.Runner{
-				URL:    plug.WASM.URL,
-				SHA256: plug.WASM.SHA256,
-			}
-		default:
-			return "", nil, req, fmt.Errorf("unsupported plugin type")
-		}
-
-		opts, err := convert.YAMLtoJSON(sql.Plugin.Options)
-		if err != nil {
-			return "", nil, req, fmt.Errorf("invalid plugin options")
-		}
-		req.PluginOptions = opts
-
-	default:
-		return "", nil, req, fmt.Errorf("missing language backend")
-	}
+	out = combo.Go.Out
+	handler = ext.HandleFunc(golang.Generate)
 	resp, err := handler.Generate(ctx, req)
 	return out, resp, req, err
 }

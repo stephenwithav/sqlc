@@ -9,11 +9,11 @@ import (
 	"go/format"
 	"path/filepath"
 	"strings"
-	"text/template"
 
 	"github.com/stephenwithav/sqlc/pkg/codegen/sdk"
 	"github.com/stephenwithav/sqlc/pkg/metadata"
 	"github.com/stephenwithav/sqlc/pkg/plugin"
+	"github.com/stephenwithav/template"
 )
 
 type tmplCtx struct {
@@ -44,17 +44,17 @@ func (t *tmplCtx) OutputQuery(sourceName string) bool {
 	return t.SourceName == sourceName
 }
 
-func Generate(ctx context.Context, req *plugin.CodeGenRequest) (*plugin.CodeGenResponse, error) {
+func Generate(ctx context.Context, req *plugin.CodeGenRequest, options ...template.Option) (*plugin.CodeGenResponse, error) {
 	enums := buildEnums(req)
 	structs := buildStructs(req)
 	queries, err := buildQueries(req, structs)
 	if err != nil {
 		return nil, err
 	}
-	return generate(req, enums, structs, queries)
+	return generate(req, enums, structs, queries, options...)
 }
 
-func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, queries []Query) (*plugin.CodeGenResponse, error) {
+func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, queries []Query, options ...template.Option) (*plugin.CodeGenResponse, error) {
 	i := &importer{
 		Settings: req.Settings,
 		Queries:  queries,
@@ -62,23 +62,26 @@ func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, querie
 		Structs:  structs,
 	}
 
-	funcMap := template.FuncMap{
+	// Every template can use these funcs.
+	// Ensure they're loaded first.
+	options = append([]template.Option{template.Funcs(template.FuncMap{
 		"lowerTitle": sdk.LowerTitle,
 		"comment":    sdk.DoubleSlashComment,
 		"escape":     sdk.EscapeBacktick,
 		"imports":    i.Imports,
 		"hasPrefix":  strings.HasPrefix,
+	})}, options...)
+
+	// Default behavior if no options are passed in.
+	if len(options) == 1 {
+		options = append(options, template.ParseFS(
+			templates,
+			"templates/*.tmpl",
+			"templates/*/*.tmpl",
+		))
 	}
 
-	tmpl := template.Must(
-		template.New("table").
-			Funcs(funcMap).
-			ParseFS(
-				templates,
-				"templates/*.tmpl",
-				"templates/*/*.tmpl",
-			),
-	)
+	tmpl, _ := template.New("table", options...)
 
 	golang := req.Settings.Go
 	tctx := tmplCtx{
