@@ -14,7 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pganalyze/pg_query_go/v2 v2.2.0
 	github.com/pingcap/tidb/parser v0.0.0-20230202151557-3412b5d8614c
-	github.com/stephenwithav/template v0.0.0-20230215174902-b1ece3783373
+	github.com/stephenwithav/template v0.2.0
 	golang.org/x/sync v0.1.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1

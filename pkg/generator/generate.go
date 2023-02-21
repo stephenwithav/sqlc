@@ -18,10 +18,10 @@ import (
 	"github.com/stephenwithav/sqlc/pkg/compiler"
 	"github.com/stephenwithav/sqlc/pkg/config"
 	"github.com/stephenwithav/sqlc/pkg/debug"
-	"github.com/stephenwithav/sqlc/pkg/ext"
 	"github.com/stephenwithav/sqlc/pkg/multierr"
 	"github.com/stephenwithav/sqlc/pkg/opts"
 	"github.com/stephenwithav/sqlc/pkg/plugin"
+	"github.com/stephenwithav/template"
 )
 
 const errMessageNoVersion = `The configuration file must have a version number.
@@ -77,10 +77,27 @@ func readConfig(stderr io.Writer, configSource io.Reader) (*config.Config, error
 	return &conf, nil
 }
 
-func Generate(ctx context.Context, configSource io.Reader) (map[string]string, []*plugin.CodeGenRequest, error) {
+func verifyOptions(options *Option) {
+	if options.filesPerTemplate == nil {
+		options.filesPerTemplate = map[string]string{
+			"dbFile":        "db.go",
+			"modelsFile":    "models.go",
+			"interfaceFile": "querier.go",
+			"copyfromFile":  "copyfrom.go",
+			"batchFile":     "batch.go",
+		}
+	}
+	if len(options.templateOptions) == 0 {
+		options.templateOptions = []template.Option{}
+	}
+}
+
+func Generate(ctx context.Context, configSource io.Reader, options *Option) (map[string]string, []*plugin.CodeGenRequest, error) {
 	// config.ParseConfig is the magic here. It accepts an io.Reader, which
 	// could be a bytes.Reader or strings.NewReader. configPath is really
 	// unnecessary.
+
+	verifyOptions(options)
 	conf, err := readConfig(os.Stderr, configSource)
 	if err != nil {
 		return nil, nil, err
@@ -168,7 +185,7 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, [
 			}
 
 			// fmt.Printf("result: %+v\n", result.Catalog.Schemas[0].Tables[0].Columns[0].Type.Name)
-			out, resp, codeGenReq, err := codegen(gctx, combo, sql, result)
+			out, resp, codeGenReq, err := codegen(gctx, combo, sql, result, options)
 			if err != nil {
 				fmt.Fprintf(errout, "# package %s\n", name)
 				fmt.Fprintf(errout, "error generating code: %s\n", err)
@@ -226,14 +243,11 @@ func parse(ctx context.Context, sql config.SQL, combo config.CombinedSettings, p
 	return c.Result(), false
 }
 
-func codegen(ctx context.Context, combo config.CombinedSettings, sql outPair, result *compiler.Result) (string, *plugin.CodeGenResponse, *plugin.CodeGenRequest, error) {
+func codegen(ctx context.Context, combo config.CombinedSettings, sql outPair, result *compiler.Result, options *Option) (string, *plugin.CodeGenResponse, *plugin.CodeGenRequest, error) {
 	defer trace.StartRegion(ctx, "codegen").End()
 	req := codeGenRequest(result, combo)
-	fmt.Printf("Queriez: %+v\n", req.GetQueries()[0].GetColumns())
-	var handler ext.Handler
-	var out string
-	out = combo.Go.Out
-	handler = ext.HandleFunc(golang.Generate)
-	resp, err := handler.Generate(ctx, req)
+	// fmt.Printf("Queriez: %+v\n", req.GetQueries()[0].GetColumns())
+	out := combo.Go.Out
+	resp, err := golang.Generate(ctx, req, options.templateOptions, options.filesPerTemplate)
 	return out, resp, req, err
 }

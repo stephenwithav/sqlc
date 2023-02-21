@@ -44,17 +44,23 @@ func (t *tmplCtx) OutputQuery(sourceName string) bool {
 	return t.SourceName == sourceName
 }
 
-func Generate(ctx context.Context, req *plugin.CodeGenRequest, options ...template.Option) (*plugin.CodeGenResponse, error) {
+func Generate(ctx context.Context, req *plugin.CodeGenRequest, options []template.Option, templateFiles map[string]string) (*plugin.CodeGenResponse, error) {
 	enums := buildEnums(req)
 	structs := buildStructs(req)
 	queries, err := buildQueries(req, structs)
 	if err != nil {
 		return nil, err
 	}
-	return generate(req, enums, structs, queries, options...)
+	if len(templateFiles) == 0 {
+		templateFiles = make(map[string]string, len(defaultFilenamePerTemplate))
+		for key, val := range defaultFilenamePerTemplate {
+			templateFiles[key] = val
+		}
+	}
+	return generate(req, enums, structs, queries, options, templateFiles)
 }
 
-func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, queries []Query, options ...template.Option) (*plugin.CodeGenResponse, error) {
+func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, queries []Query, options []template.Option, templateFiles map[string]string) (*plugin.CodeGenResponse, error) {
 	i := &importer{
 		Settings: req.Settings,
 		Queries:  queries,
@@ -140,41 +146,34 @@ func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, querie
 		return nil
 	}
 
-	dbFileName := "db.go"
-	if golang.OutputDbFileName != "" {
-		dbFileName = golang.OutputDbFileName
-	}
-	modelsFileName := "models.go"
-	if golang.OutputModelsFileName != "" {
-		modelsFileName = golang.OutputModelsFileName
-	}
-	querierFileName := "querier.go"
-	if golang.OutputQuerierFileName != "" {
-		querierFileName = golang.OutputQuerierFileName
-	}
-	copyfromFileName := "copyfrom.go"
-	// TODO(Jille): Make this configurable.
-
-	batchFileName := "batch.go"
-
-	if err := execute(dbFileName, "dbFile"); err != nil {
-		return nil, err
-	}
-	if err := execute(modelsFileName, "modelsFile"); err != nil {
-		return nil, err
-	}
-	if golang.EmitInterface {
+	if querierFileName, ok := templateFiles["interfaceFile"]; ok && tctx.EmitInterface {
 		if err := execute(querierFileName, "interfaceFile"); err != nil {
 			return nil, err
 		}
+		delete(templateFiles, "interfaceFile")
 	}
-	if tctx.UsesCopyFrom {
+	if copyfromFileName, ok := templateFiles["copyfromFile"]; ok && tctx.UsesCopyFrom {
 		if err := execute(copyfromFileName, "copyfromFile"); err != nil {
 			return nil, err
 		}
+		delete(templateFiles, "copyfromFile")
 	}
-	if tctx.UsesBatch {
+	if batchFileName, ok := templateFiles["batchFile"]; ok && tctx.UsesBatch {
 		if err := execute(batchFileName, "batchFile"); err != nil {
+			return nil, err
+		}
+		delete(templateFiles, "batchFile")
+	}
+
+	if golang.OutputDbFileName != "" {
+		templateFiles["dbFile"] = golang.OutputDbFileName
+	}
+	if golang.OutputModelsFileName != "" {
+		templateFiles["modelsFile"] = golang.OutputModelsFileName
+	}
+
+	for templateName, outputFile := range templateFiles {
+		if err := execute(outputFile, templateName); err != nil {
 			return nil, err
 		}
 	}

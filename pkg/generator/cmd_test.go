@@ -74,7 +74,7 @@ sql:
 `
 
 	r := strings.NewReader(given)
-	_, _, err := SQLToGo(r)
+	_, _, err := SQLToGo(r, nil)
 	if err != nil {
 		log.Println(err)
 	}
