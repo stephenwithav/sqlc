@@ -87,7 +87,7 @@ func generate(req *plugin.CodeGenRequest, enums []Enum, structs []Struct, querie
 		))
 	}
 
-	tmpl, _ := template.New("table", options...)
+	tmpl := template.Must(template.New("table", options...))
 
 	golang := req.Settings.Go
 	tctx := tmplCtx{
