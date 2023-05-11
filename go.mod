@@ -14,6 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pganalyze/pg_query_go/v2 v2.2.0
 	github.com/pingcap/tidb/parser v0.0.0-20230202151557-3412b5d8614c
+	github.com/stephenwithav/template v0.2.0
 	golang.org/x/sync v0.1.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -29,6 +30,7 @@ require (
 	github.com/jackc/pgproto3/v2 v2.3.1 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
 	github.com/jackc/pgtype v1.12.0 // indirect
+	github.com/laher/mergefs v0.1.1 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
