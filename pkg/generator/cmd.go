@@ -3,13 +3,14 @@ package generator
 import (
 	"context"
 	"io"
+
+	"github.com/stephenwithav/sqlc/pkg/plugin"
+	"github.com/stephenwithav/template"
 )
 
-// TODO: Change SQLToGo's input to SQLCParams, where each file field corresponds
-// to an io.Reader.
-//
-// TODO: Change Generate to accept SQLCParams, read file contents from there.
-type SQLCParams struct {
+type Option struct {
+	templateOptions  []template.Option
+	filesPerTemplate map[string]string
 }
 
 // SQLToGo transforms a sqlc.yaml-formatted io.Reader into the appropriate Go
@@ -17,6 +18,6 @@ type SQLCParams struct {
 //
 // Returns a map whose keys are the output filenames and whose values are the
 // file contents.
-func SQLToGo(sql io.Reader) (map[string]string, error) {
-	return Generate(context.Background(), sql)
+func SQLToGo(sql io.Reader, option *Option) (map[string]string, []*plugin.CodeGenRequest, error) {
+	return Generate(context.Background(), sql, option)
 }

@@ -15,17 +15,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/stephenwithav/sqlc/pkg/codegen/golang"
-	"github.com/stephenwithav/sqlc/pkg/codegen/json"
 	"github.com/stephenwithav/sqlc/pkg/compiler"
 	"github.com/stephenwithav/sqlc/pkg/config"
-	"github.com/stephenwithav/sqlc/pkg/config/convert"
 	"github.com/stephenwithav/sqlc/pkg/debug"
-	"github.com/stephenwithav/sqlc/pkg/ext"
-	"github.com/stephenwithav/sqlc/pkg/ext/process"
-	"github.com/stephenwithav/sqlc/pkg/ext/wasm"
 	"github.com/stephenwithav/sqlc/pkg/multierr"
 	"github.com/stephenwithav/sqlc/pkg/opts"
 	"github.com/stephenwithav/sqlc/pkg/plugin"
+	"github.com/stephenwithav/template"
 )
 
 const errMessageNoVersion = `The configuration file must have a version number.
@@ -81,13 +77,30 @@ func readConfig(stderr io.Writer, configSource io.Reader) (*config.Config, error
 	return &conf, nil
 }
 
-func Generate(ctx context.Context, configSource io.Reader) (map[string]string, error) {
+func verifyOptions(options *Option) {
+	if options.filesPerTemplate == nil {
+		options.filesPerTemplate = map[string]string{
+			"dbFile":        "db.go",
+			"modelsFile":    "models.go",
+			"interfaceFile": "querier.go",
+			"copyfromFile":  "copyfrom.go",
+			"batchFile":     "batch.go",
+		}
+	}
+	if len(options.templateOptions) == 0 {
+		options.templateOptions = []template.Option{}
+	}
+}
+
+func Generate(ctx context.Context, configSource io.Reader, options *Option) (map[string]string, []*plugin.CodeGenRequest, error) {
 	// config.ParseConfig is the magic here. It accepts an io.Reader, which
 	// could be a bytes.Reader or strings.NewReader. configPath is really
 	// unnecessary.
+
+	verifyOptions(options)
 	conf, err := readConfig(os.Stderr, configSource)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	output := map[string]string{}
@@ -120,6 +133,7 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, e
 	grp.SetLimit(runtime.GOMAXPROCS(0))
 
 	stderrs := make([]bytes.Buffer, len(pairs))
+	codeGenReqs := make([]*plugin.CodeGenRequest, len(pairs))
 
 	for i, pair := range pairs {
 		sql := pair
@@ -143,6 +157,7 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, e
 				joined = append(joined, q)
 			}
 			sql.Queries = joined
+			// fmt.Printf("Queries: %+v\n", sql.Queries)
 
 			var name, lang string
 			parseOpts := opts.Parser{
@@ -169,7 +184,8 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, e
 				return nil
 			}
 
-			out, resp, err := codegen(gctx, combo, sql, result)
+			// fmt.Printf("result: %+v\n", result.Catalog.Schemas[0].Tables[0].Columns[0].Type.Name)
+			out, resp, codeGenReq, err := codegen(gctx, combo, sql, result, options)
 			if err != nil {
 				fmt.Fprintf(errout, "# package %s\n", name)
 				fmt.Fprintf(errout, "error generating code: %s\n", err)
@@ -177,7 +193,9 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, e
 				packageRegion.End()
 				return nil
 			}
+			codeGenReqs = append(codeGenReqs, codeGenReq)
 
+			// fmt.Printf("resp: %+v\n", resp.GetFiles())
 			files := map[string]string{}
 			for _, file := range resp.Files {
 				files[file.Name] = string(file.Contents)
@@ -195,17 +213,17 @@ func Generate(ctx context.Context, configSource io.Reader) (map[string]string, e
 		})
 	}
 	if err := grp.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if errored {
 		for i, _ := range stderrs {
 			if _, err := io.Copy(os.Stderr, &stderrs[i]); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
-		return nil, fmt.Errorf("errored")
+		return nil, nil, fmt.Errorf("errored")
 	}
-	return output, nil
+	return output, codeGenReqs, nil
 }
 
 func parse(ctx context.Context, sql config.SQL, combo config.CombinedSettings, parserOpts opts.Parser, stderr io.Writer) (*compiler.Result, bool) {
@@ -225,50 +243,11 @@ func parse(ctx context.Context, sql config.SQL, combo config.CombinedSettings, p
 	return c.Result(), false
 }
 
-func codegen(ctx context.Context, combo config.CombinedSettings, sql outPair, result *compiler.Result) (string, *plugin.CodeGenResponse, error) {
+func codegen(ctx context.Context, combo config.CombinedSettings, sql outPair, result *compiler.Result, options *Option) (string, *plugin.CodeGenResponse, *plugin.CodeGenRequest, error) {
 	defer trace.StartRegion(ctx, "codegen").End()
 	req := codeGenRequest(result, combo)
-	var handler ext.Handler
-	var out string
-	switch {
-	case sql.Gen.Go != nil:
-		out = combo.Go.Out
-		handler = ext.HandleFunc(golang.Generate)
-
-	case sql.Gen.JSON != nil:
-		out = combo.JSON.Out
-		handler = ext.HandleFunc(json.Generate)
-
-	case sql.Plugin != nil:
-		out = sql.Plugin.Out
-		plug, err := findPlugin(combo.Global, sql.Plugin.Plugin)
-		if err != nil {
-			return "", nil, fmt.Errorf("plugin not found: %s", err)
-		}
-
-		switch {
-		case plug.Process != nil:
-			handler = &process.Runner{
-				Cmd: plug.Process.Cmd,
-			}
-		case plug.WASM != nil:
-			handler = &wasm.Runner{
-				URL:    plug.WASM.URL,
-				SHA256: plug.WASM.SHA256,
-			}
-		default:
-			return "", nil, fmt.Errorf("unsupported plugin type")
-		}
-
-		opts, err := convert.YAMLtoJSON(sql.Plugin.Options)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid plugin options")
-		}
-		req.PluginOptions = opts
-
-	default:
-		return "", nil, fmt.Errorf("missing language backend")
-	}
-	resp, err := handler.Generate(ctx, req)
-	return out, resp, err
+	// fmt.Printf("Queriez: %+v\n", req.GetQueries()[0].GetColumns())
+	out := combo.Go.Out
+	resp, err := golang.Generate(ctx, req, options.templateOptions, options.filesPerTemplate)
+	return out, resp, req, err
 }
